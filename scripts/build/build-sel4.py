@@ -982,6 +982,8 @@ def build_sel4_generation(
     # profile, so a board generation is not interchangeable with the QEMU one
     # of the same name.
     output = BUILD_ROOT / name if platform is QEMU_ARM_VIRT else BUILD_ROOT / platform.name / name
+    # Embedded generations must not overwrite or remove a selector boot store.
+    output = output / "embedded"
     output.mkdir(parents=True, exist_ok=True)
     environment = dict(environment if environment is not None else os.environ)
     # The components link against libsel4, so their build scripts need this

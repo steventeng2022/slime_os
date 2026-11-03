@@ -41,7 +41,7 @@ PLATFORM = "qemu-pc99"
 PROFILE_NAME = "x86_64-sel4-qemu-pc99"
 FRAMEWORK_PROFILE_NAME = "x86_64-sel4-framework13-ai300"
 MANIFEST_PATH = ROOT / "build" / f"slime-sel4-{PLATFORM}.identity.json"
-GENERATION_PATH = ROOT / "build" / PLATFORM / "sel4-generation" / "generation.bin"
+GENERATION_PATH = ROOT / "build" / PLATFORM / "sel4-generation" / "embedded" / "generation.bin"
 PINS_PATH = ROOT / "sel4" / "pins.toml"
 BUILD_SEL4 = ROOT / "scripts" / "build" / "build-sel4.py"
 
