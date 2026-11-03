@@ -1,0 +1,38 @@
+name: Feature request
+description: Propose an improvement and describe the result it would enable.
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the problem and the outcome you need.
+        You do not need MyQue, a work-item UUID, or a change under `.tasks/` to propose a feature.
+        Accepted proposals follow the [contribution guide](https://github.com/iceice666/slime_os/blob/main/CONTRIBUTING.md) before implementation.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+      description: What are you trying to do, and what prevents it today?
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Proposed behavior
+      description: Describe the observable result you want. Include an example if possible.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope and constraints
+      description: Name affected components, tools, or target machines if known. State any limits the proposal must preserve.
+  - type: textarea
+    id: verification
+    attributes:
+      label: How could we verify it?
+      description: Suggest a command, scenario, or observation that would show the feature works. An implementation plan is optional.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives and context
+      description: Describe existing workarounds, alternatives, or related proposals. Attach examples here if useful.

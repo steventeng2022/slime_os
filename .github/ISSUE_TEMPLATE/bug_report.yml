@@ -1,0 +1,69 @@
+name: Bug report
+description: Report a build, tooling, or runtime failure with reproduction steps.
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe the failure so another contributor can reproduce it.
+        You do not need MyQue, a work-item UUID, or a change under `.tasks/` to report a bug.
+        See the [contribution guide](https://github.com/iceice666/slime_os/blob/main/CONTRIBUTING.md) for how Issues become canonical work.
+  - type: textarea
+    id: summary
+    attributes:
+      label: What failed?
+      description: Name the affected command, component, or behavior.
+      placeholder: The build fails while preparing the product image.
+    validations:
+      required: true
+  - type: input
+    id: revision
+    attributes:
+      label: Revision
+      description: Paste the output of `git rev-parse HEAD`, or name the branch or release if known.
+      placeholder: Commit SHA, branch, or release
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment and target
+      description: Include the host OS, whether you used `nix develop`, and the target profile or machine if relevant.
+      placeholder: |
+        Host OS:
+        Development environment:
+        Target profile or machine (if relevant):
+        QEMU command or physical boot method (if relevant):
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Include exact commands, relevant inputs, and any local changes. State if reproduction is intermittent.
+      placeholder: |
+        1. From the repository root, run ...
+        2. Use these inputs ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result
+      description: What did you expect to observe?
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual result
+      description: Describe what happened, including any error message or exit status.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Build or serial output
+      description: Paste relevant output, including the command and lines around the failure. This field formats plain text automatically.
+      render: text
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Add attachments, related issues, or the last working revision if known.
