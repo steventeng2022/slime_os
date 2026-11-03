@@ -229,3 +229,65 @@ fn a_variable_length_integer_widens_at_each_seven_bits() {
         assert_eq!(leb_bytes(value), width, "{value}");
     }
 }
+
+/// The PointCloud2 key the LiDAR publisher names in full, and the size of one frame of the pinned bag.
+const LIDAR_KEY: &str = "0/velodyne_points/sensor_msgs::msg::dds_::PointCloud2_/RIHS01_9198cabf7da3796ae6fe19c4cb3bdd3525492988c70522628af5daa124bae2b5";
+const LIDAR_FRAME_BYTES: usize = 494_889;
+
+#[test]
+fn the_lidar_configuration_is_accepted_and_holds_one_frame() {
+    assert_eq!(LIDAR.check(), Ok(()));
+    assert_eq!(LIDAR.mode, Mode::Heap);
+    // A batch is one network-service operation with its stream length.
+    assert_eq!(LIDAR.batch_bytes, DATA_BYTES);
+    assert!(LIDAR.payload_bytes >= LIDAR_FRAME_BYTES as u64);
+    assert_eq!(LIDAR_KEY.len(), 126);
+    assert!(LIDAR.key_bytes >= LIDAR_KEY.len());
+    assert_eq!(LIDAR.attachment_bytes, REQUIRED_ATTACHMENT_BYTES);
+    assert_ne!(LIDAR.reassembly_timeout_ms, 0);
+    assert_eq!(LIDAR.message_bytes(), 524_460);
+    assert_eq!(
+        LIDAR.heap_bytes,
+        (2 * LIDAR.outstanding_samples as u64 + 1) * LIDAR.message_bytes()
+    );
+    assert_eq!(LIDAR.heap_bytes, LIDAR.heap_needed());
+    assert_eq!(LIDAR.required_stack(), 34_888);
+    assert!(LIDAR.required_stack() <= LIDAR.stack_bytes);
+}
+
+/// One frame under the full key, cut as the session cuts it for the batch the configuration
+/// announces: every fragment fits one operation with its stream length, and they join to the Put.
+#[test]
+fn a_lidar_frame_crosses_in_batches_of_one_operation() {
+    use crate::zenoh_profile0::fragment::{PutMessage, Source, Splitter, decode_fragment};
+    use crate::zenoh_profile0::session::Params;
+
+    let params = Params::from_limits(&LIDAR);
+    assert_eq!(usize::from(params.announced), DATA_BYTES);
+    assert_eq!(params.bounds.batch + STREAM_LENGTH_BYTES, DATA_BYTES);
+    assert!(params.fragments);
+    let payload: std::vec::Vec<u8> = (0..LIDAR_FRAME_BYTES).map(|i| (i * 7) as u8).collect();
+    let attachment = [0x5a; REQUIRED_ATTACHMENT_BYTES];
+    let message = PutMessage::new(LIDAR_KEY.as_bytes(), &attachment, &payload);
+    assert!(message.len() as u64 <= LIDAR.message_bytes());
+    assert!(message.len() <= params.message_limit);
+    let mut whole = std::vec![0u8; message.len()];
+    message.read(0, &mut whole);
+    // Start below the wrap so the sequence number's width changes inside the run.
+    let first = u32::MAX - 3;
+    let mut splitter = Splitter::new(message, DATA_BYTES, first).expect("splitter");
+    let mut joined = std::vec::Vec::new();
+    let mut out = [0u8; DATA_BYTES];
+    let mut count = 0u32;
+    while let Some(len) = splitter.next_body(&mut out).expect("fragment") {
+        assert!(len + STREAM_LENGTH_BYTES <= DATA_BYTES, "fragment {count}");
+        let part = decode_fragment(&out[..len], Some(DATA_BYTES)).expect("decodes");
+        assert_eq!(part.sn, first.wrapping_add(count));
+        assert_eq!(part.more, !splitter.done());
+        joined.extend_from_slice(part.data);
+        count += 1;
+    }
+    assert_eq!(joined, whole);
+    // Four fragments carry a five-byte sequence number before the wrap, the rest one byte.
+    assert_eq!(count, 121);
+}

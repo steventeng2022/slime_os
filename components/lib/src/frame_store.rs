@@ -270,6 +270,111 @@ pub struct StoreSummary {
     pub last_log_time_ns: u64,
     /// SHA-256 of every payload, concatenated in index order.
     pub payload_digest: [u8; 32],
+    /// Where the frame index starts, from the start of the store.
+    pub index_offset: usize,
+}
+
+/// Where one frame's payload lies in a store read through a [`StoreSource`]. Only
+/// [`frame_extent`] makes one, from an index entry that passed its checks again.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameExtent {
+    log_time_ns: u64,
+    offset: usize,
+    len: usize,
+}
+
+impl FrameExtent {
+    /// The frame's MCAP log time.
+    pub fn log_time_ns(&self) -> u64 {
+        self.log_time_ns
+    }
+
+    /// Where the payload starts, from the start of the store.
+    pub fn offset(&self) -> usize {
+        self.offset
+    }
+
+    /// The payload's length in bytes.
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    /// Whether the payload is empty, which the format permits.
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+}
+
+/// Frame `index` of a store of `size` bytes that [`validate_streaming`] summarized as `summary`, or
+/// `None` past the last frame. The entry is read again and held to the checks it passed then: zero
+/// reserved bytes, the payload bound and a payload inside the store. A source that changed since
+/// is refused with the class of the check the entry now fails.
+pub fn frame_extent<S: StoreSource>(
+    source: &mut S,
+    summary: &StoreSummary,
+    size: usize,
+    index: usize,
+) -> Result<Option<FrameExtent>, StreamError> {
+    if index >= summary.frame_count {
+        return Ok(None);
+    }
+    // A summary of another store could place the entry past this one's end.
+    let at = summary.index_offset + index * INDEX_ENTRY_BYTES;
+    if at
+        .checked_add(INDEX_ENTRY_BYTES)
+        .is_none_or(|end| end > size)
+    {
+        return Err(refused(Refusal::Truncated));
+    }
+    let mut raw = [0u8; INDEX_ENTRY_BYTES];
+    source.read(at, &mut raw)?;
+    let entry = WireFrameIndexEntry::decode(&raw).ok_or(refused(Refusal::Truncated))?;
+    if !zero(&entry.reserved) {
+        return Err(refused(Refusal::Header));
+    }
+    let len = entry.payloadBytes as usize;
+    if len > MAX_PAYLOAD_BYTES {
+        return Err(refused(Refusal::PayloadBound));
+    }
+    let offset = match usize::try_from(entry.payloadOffset) {
+        Ok(offset) if offset <= size && len <= size - offset => offset,
+        _ => return Err(refused(Refusal::Range)),
+    };
+    Ok(Some(FrameExtent {
+        log_time_ns: entry.logTimeNs,
+        offset,
+        len,
+    }))
+}
+
+/// Why [`read_payload`] read nothing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PayloadError {
+    /// The bytes asked for run past the end of the frame's payload.
+    Range,
+    /// The source could not supply them.
+    Source,
+}
+
+/// Fills `out` with `frame`'s payload bytes from byte `at` of the payload. A range that runs past the
+/// payload is refused before the source is read, so a caller can never read a neighbour's bytes or
+/// padding through a frame.
+pub fn read_payload<S: StoreSource>(
+    source: &mut S,
+    frame: &FrameExtent,
+    at: usize,
+    out: &mut [u8],
+) -> Result<(), PayloadError> {
+    match at.checked_add(out.len()) {
+        Some(end) if end <= frame.len => {}
+        _ => return Err(PayloadError::Range),
+    }
+    if out.is_empty() {
+        return Ok(());
+    }
+    source
+        .read(frame.offset + at, out)
+        .map_err(|_| PayloadError::Source)
 }
 
 /// Bytes read per source call while scanning texts, zero runs and payloads.
@@ -449,6 +554,7 @@ pub fn validate_streaming<S: StoreSource>(
         first_log_time_ns: first_time,
         last_log_time_ns: previous_time.unwrap_or(first_time),
         payload_digest: digest.finalize(),
+        index_offset: index_start,
     })
 }
 
@@ -541,7 +647,10 @@ mod tests {
 mod streaming {
     extern crate std;
 
-    use super::{FrameStore, Refusal, SourceError, StoreSource, StreamError, validate_streaming};
+    use super::{
+        FrameStore, PayloadError, Refusal, SourceError, StoreSource, StreamError, frame_extent,
+        read_payload, validate_streaming,
+    };
     use std::vec::Vec;
 
     const FIXTURE: &[u8] = include_bytes!("frame_store/fixture.bin");
@@ -650,6 +759,103 @@ mod streaming {
             longer.extend_from_slice(&[0; 8]);
             assert_eq!(streamed(&longer), parsed(&longer));
         }
+    }
+
+    /// Every frame read back through its extent, in chunks of every size up to past the payload,
+    /// is the frame the whole-store reader exposes.
+    #[test]
+    fn frames_read_back_through_their_extents() {
+        for bytes in [FIXTURE.to_vec(), wide()] {
+            let summary = validate_streaming(&mut Memory(&bytes), bytes.len()).expect("valid");
+            let store = FrameStore::parse(&bytes).expect("valid");
+            assert_eq!(summary.index_offset, store.index_start);
+            for (index, frame) in store.frames().enumerate() {
+                let extent = frame_extent(&mut Memory(&bytes), &summary, bytes.len(), index)
+                    .expect("entry")
+                    .expect("in range");
+                assert_eq!(extent.offset(), frame.offset);
+                assert_eq!(extent.len(), frame.payload.len());
+                assert_eq!(extent.log_time_ns(), frame.log_time_ns);
+                for chunk in 1..=frame.payload.len() + 1 {
+                    let mut joined = Vec::new();
+                    let mut at = 0;
+                    while at < extent.len() {
+                        let take = chunk.min(extent.len() - at);
+                        let mut part = std::vec![0u8; take];
+                        read_payload(&mut Memory(&bytes), &extent, at, &mut part).expect("read");
+                        joined.extend_from_slice(&part);
+                        at += take;
+                    }
+                    assert_eq!(joined, frame.payload, "frame {index} in chunks of {chunk}");
+                }
+            }
+            assert_eq!(
+                frame_extent(&mut Memory(&bytes), &summary, bytes.len(), store.len()),
+                Ok(None)
+            );
+        }
+    }
+
+    #[test]
+    fn a_read_past_the_payload_is_refused_before_the_source() {
+        struct Untouched;
+        impl StoreSource for Untouched {
+            fn read(&mut self, _: usize, _: &mut [u8]) -> Result<(), SourceError> {
+                panic!("a refused range read the source");
+            }
+        }
+        let summary = validate_streaming(&mut Memory(FIXTURE), FIXTURE.len()).expect("valid");
+        let extent = frame_extent(&mut Memory(FIXTURE), &summary, FIXTURE.len(), 0)
+            .expect("entry")
+            .expect("in range");
+        let len = extent.len();
+        let mut one = [0u8; 1];
+        assert_eq!(
+            read_payload(&mut Untouched, &extent, len, &mut one),
+            Err(PayloadError::Range)
+        );
+        let mut whole = std::vec![0u8; len + 1];
+        assert_eq!(
+            read_payload(&mut Untouched, &extent, 0, &mut whole),
+            Err(PayloadError::Range)
+        );
+        assert_eq!(
+            read_payload(&mut Untouched, &extent, usize::MAX, &mut one),
+            Err(PayloadError::Range)
+        );
+        assert_eq!(read_payload(&mut Untouched, &extent, len, &mut []), Ok(()));
+    }
+
+    /// An entry that changed after validation is refused with the class it now fails.
+    #[test]
+    fn a_changed_entry_is_refused_by_class() {
+        let summary = validate_streaming(&mut Memory(FIXTURE), FIXTURE.len()).expect("valid");
+        let entry = summary.index_offset;
+        let changed = |edit: &dyn Fn(&mut Vec<u8>)| {
+            let mut bytes = FIXTURE.to_vec();
+            edit(&mut bytes);
+            frame_extent(&mut Memory(&bytes), &summary, bytes.len(), 0).err()
+        };
+        assert_eq!(
+            changed(&|bytes| bytes[entry + 12] = 1),
+            Some(StreamError::Refused(Refusal::Header))
+        );
+        assert_eq!(
+            changed(&|bytes| {
+                bytes[entry..entry + 8].copy_from_slice(&(u64::MAX - 7).to_le_bytes())
+            }),
+            Some(StreamError::Refused(Refusal::Range))
+        );
+        assert_eq!(
+            changed(&|bytes| {
+                bytes[entry + 8..entry + 12].copy_from_slice(&u32::MAX.to_le_bytes())
+            }),
+            Some(StreamError::Refused(Refusal::PayloadBound))
+        );
+        assert_eq!(
+            frame_extent(&mut Memory(&FIXTURE[..entry + 4]), &summary, entry + 4, 0).err(),
+            Some(StreamError::Refused(Refusal::Truncated))
+        );
     }
 
     #[test]

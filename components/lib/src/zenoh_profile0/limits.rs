@@ -299,6 +299,24 @@ pub const HEAP: Limits = Limits {
     heap_bytes: 149_004,
 };
 
+/// The LiDAR publisher's heap link: one PointCloud2 frame of up to 512 KiB as one fragmented Put, in
+/// batches of exactly one network-service operation, stream length included. The key and table sizes
+/// are the `heap` configuration's, which the stock-peer exchanges already run.
+pub const LIDAR: Limits = Limits {
+    name: "lidar",
+    mode: Mode::Heap,
+    batch_bytes: DATA_BYTES,
+    payload_bytes: 524_288,
+    key_bytes: 129,
+    attachment_bytes: 33,
+    max_keys: 4,
+    max_subscribers: 4,
+    outstanding_samples: 4,
+    stack_bytes: 65_536,
+    reassembly_timeout_ms: 5000,
+    heap_bytes: 4_720_140,
+};
+
 #[cfg(test)]
 #[path = "limits_tests.rs"]
 mod tests;

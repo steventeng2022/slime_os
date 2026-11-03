@@ -4,7 +4,8 @@
 //! padding, payload hash — and refuses with the class of the first check that fails.
 //! [`frame_store`] then validates the payload as a `contracts/frame-store/v1` store, read where it
 //! lies. Neither allocates or holds more than one 4 KiB chunk, so a component reads a store far
-//! larger than its memory through its block ring.
+//! larger than its memory through its block ring. [`open_store`] validates the same way and keeps
+//! the store open, so a component then reads one frame's payload at a time into storage it owns.
 
 use boot_contracts::crc32::Crc32;
 use boot_contracts::sha256::Sha256;
@@ -15,7 +16,9 @@ use slime_proto::data_volume::{
     REFUSAL_CLASSES, SECTOR_BYTES, VOLUME_HEADER_BYTES, VOLUME_MAGIC,
 };
 
-use crate::frame_store::{self, SourceError, StoreSource, StoreSummary, StreamError};
+use crate::frame_store::{
+    self, FrameExtent, PayloadError, SourceError, StoreSource, StoreSummary, StreamError,
+};
 
 /// Sectors read per call, matching one block request's payload window.
 pub const CHUNK_SECTORS: usize = 8;
@@ -360,6 +363,34 @@ impl<D: Disk> StoreSource for Payload<'_, D> {
 
 /// Validates an opened volume's payload as a frame store and summarizes it.
 pub fn frame_store<D: Disk>(disk: &mut D, volume: &Volume) -> Result<StoreSummary, Error> {
+    open_store(disk, volume).map(|store| store.summary)
+}
+
+/// A frame store on an opened volume that passed [`frame_store`]'s validation, read one frame at a
+/// time through the same one-chunk cache. It holds the disk for as long as it lives.
+pub struct StoreReader<'a, D: Disk> {
+    payload: Payload<'a, D>,
+    size: usize,
+    summary: StoreSummary,
+}
+
+/// Why a frame was not read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrameError {
+    /// The frame index or the byte range asked for is outside the store or the frame.
+    Range,
+    /// The frame's index entry, read again, fails a check it passed in validation.
+    Refused,
+    /// The device could not supply the sectors.
+    Device,
+}
+
+/// Validates an opened volume's payload as a frame store, as [`frame_store`] does, and keeps it
+/// open for frame reads.
+pub fn open_store<'a, D: Disk>(
+    disk: &'a mut D,
+    volume: &Volume,
+) -> Result<StoreReader<'a, D>, Error> {
     let size =
         usize::try_from(volume.payload_bytes).map_err(|_| Error::Refused(Refusal::FrameStore))?;
     let mut payload = Payload {
@@ -369,9 +400,53 @@ pub fn frame_store<D: Disk>(disk: &mut D, volume: &Volume) -> Result<StoreSummar
         loaded: None,
     };
     match frame_store::validate_streaming(&mut payload, size) {
-        Ok(summary) => Ok(summary),
+        Ok(summary) => Ok(StoreReader {
+            payload,
+            size,
+            summary,
+        }),
         Err(StreamError::Refused(_)) => Err(Error::Refused(Refusal::FrameStore)),
         Err(StreamError::Source) => Err(Error::Device),
+    }
+}
+
+impl<D: Disk> StoreReader<'_, D> {
+    /// What validation found: frame count, period, log times and the payload digest.
+    pub fn summary(&self) -> &StoreSummary {
+        &self.summary
+    }
+
+    /// Where frame `index` lies. Its index entry is read from the disk again and held to the checks
+    /// it passed, so a payload range always lies inside the volume's payload bytes.
+    pub fn frame(&mut self, index: usize) -> Result<FrameExtent, FrameError> {
+        match frame_store::frame_extent(&mut self.payload, &self.summary, self.size, index) {
+            Ok(Some(extent)) => Ok(extent),
+            Ok(None) => Err(FrameError::Range),
+            Err(StreamError::Refused(_)) => Err(FrameError::Refused),
+            Err(StreamError::Source) => Err(FrameError::Device),
+        }
+    }
+
+    /// Fills `out` with `frame`'s payload from byte `at` of that payload. The range must lie inside
+    /// the payload, so `out` is at most the frame's length and the store is never held whole.
+    pub fn read(
+        &mut self,
+        frame: &FrameExtent,
+        at: usize,
+        out: &mut [u8],
+    ) -> Result<(), FrameError> {
+        // An extent of another store could name bytes past this one's payload.
+        if frame
+            .offset()
+            .checked_add(frame.len())
+            .is_none_or(|end| end > self.size)
+        {
+            return Err(FrameError::Range);
+        }
+        frame_store::read_payload(&mut self.payload, frame, at, out).map_err(|error| match error {
+            PayloadError::Range => FrameError::Range,
+            PayloadError::Source => FrameError::Device,
+        })
     }
 }
 
@@ -392,7 +467,9 @@ mod tests {
         }
 
         fn read(&mut self, lba: u64, out: &mut [u8]) -> Result<(), DeviceError> {
-            assert!(!out.is_empty() && out.len() % SECTOR_BYTES == 0 && out.len() <= CHUNK);
+            assert!(
+                !out.is_empty() && out.len().is_multiple_of(SECTOR_BYTES) && out.len() <= CHUNK
+            );
             let start = lba as usize * SECTOR_BYTES;
             let bytes = self.0.get(start..start + out.len()).ok_or(DeviceError)?;
             out.copy_from_slice(bytes);
@@ -490,6 +567,105 @@ mod tests {
             summary.payload_digest,
             boot_contracts::sha256::digest(&payloads)
         );
+    }
+
+    /// Every frame read from the disk one bounded buffer at a time is the frame the whole-store
+    /// reader exposes, and the reader refuses an index or range outside the store.
+    #[test]
+    fn frames_read_back_from_the_volume() {
+        let mut disk = Memory(encode(FIXTURE));
+        let volume = open(&mut disk).expect("the fixture volume is valid");
+        let store = crate::frame_store::FrameStore::parse(FIXTURE).expect("valid");
+        let mut reader = open_store(&mut disk, &volume).expect("a valid store");
+        assert_eq!(reader.summary().frame_count, store.len());
+        let mut payloads = Vec::new();
+        for (index, frame) in store.frames().enumerate() {
+            let extent = reader.frame(index).expect("frame");
+            assert_eq!(extent.log_time_ns(), frame.log_time_ns);
+            let mut whole = std::vec![0u8; extent.len()];
+            reader.read(&extent, 0, &mut whole).expect("read");
+            assert_eq!(whole, frame.payload);
+            let mut tail = std::vec![0u8; extent.len() - 3];
+            reader.read(&extent, 3, &mut tail).expect("read");
+            assert_eq!(tail, frame.payload[3..]);
+            let mut past = std::vec![0u8; extent.len() + 1];
+            assert_eq!(reader.read(&extent, 0, &mut past), Err(FrameError::Range));
+            payloads.extend_from_slice(&whole);
+        }
+        assert_eq!(reader.frame(store.len()), Err(FrameError::Range));
+        assert_eq!(
+            reader.summary().payload_digest,
+            boot_contracts::sha256::digest(&payloads)
+        );
+    }
+
+    /// A frame read is held to this store's payload bytes, so an extent taken from a larger store
+    /// cannot reach past them into the padding or the backup GPT.
+    #[test]
+    fn an_extent_of_another_store_is_out_of_range() {
+        let mut longer = FIXTURE.to_vec();
+        let summary =
+            crate::frame_store::validate_streaming(&mut Slice(FIXTURE), FIXTURE.len()).unwrap();
+        let entry = summary.index_offset + 24;
+        // Grow frame 1 to the end of a store one 8-byte block longer.
+        let length = u32::from_le_bytes(longer[entry + 8..entry + 12].try_into().unwrap());
+        longer[entry + 8..entry + 12].copy_from_slice(&(length.div_ceil(8) * 8 + 8).to_le_bytes());
+        longer.extend_from_slice(&[0; 8]);
+        let mut big_disk = Memory(encode(&longer));
+        let big_volume = open(&mut big_disk).expect("valid");
+        let far = open_store(&mut big_disk, &big_volume)
+            .expect("a valid store")
+            .frame(1)
+            .expect("frame");
+        let mut disk = Memory(encode(FIXTURE));
+        let volume = open(&mut disk).expect("valid");
+        let mut reader = open_store(&mut disk, &volume).expect("a valid store");
+        let mut out = std::vec![0u8; far.len()];
+        assert_eq!(reader.read(&far, 0, &mut out), Err(FrameError::Range));
+    }
+
+    #[test]
+    fn a_device_failing_after_validation_is_a_device_error() {
+        let mut disk = Flaky {
+            inner: Memory(encode(FIXTURE)),
+            broken: false,
+        };
+        let volume = open(&mut disk).expect("valid");
+        let mut reader = open_store(&mut disk, &volume).expect("a valid store");
+        let extent = reader.frame(1).expect("frame");
+        reader.payload.disk.broken = true;
+        reader.payload.loaded = None;
+        let mut out = std::vec![0u8; extent.len()];
+        assert_eq!(reader.read(&extent, 0, &mut out), Err(FrameError::Device));
+        assert_eq!(reader.frame(0), Err(FrameError::Device));
+    }
+
+    struct Slice<'a>(&'a [u8]);
+
+    impl StoreSource for Slice<'_> {
+        fn read(&mut self, offset: usize, out: &mut [u8]) -> Result<(), SourceError> {
+            let bytes = self.0.get(offset..offset + out.len()).ok_or(SourceError)?;
+            out.copy_from_slice(bytes);
+            Ok(())
+        }
+    }
+
+    struct Flaky {
+        inner: Memory,
+        broken: bool,
+    }
+
+    impl Disk for Flaky {
+        fn capacity(&self) -> u64 {
+            self.inner.capacity()
+        }
+
+        fn read(&mut self, lba: u64, out: &mut [u8]) -> Result<(), DeviceError> {
+            if self.broken {
+                return Err(DeviceError);
+            }
+            self.inner.read(lba, out)
+        }
     }
 
     #[test]
