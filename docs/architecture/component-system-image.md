@@ -65,6 +65,19 @@ aggregate-bounded rather than per-image maximum times task count. The
 versions and qualification limits. This does not widen the boot selector's
 separate 4 MiB boot-store limit or establish application-runtime compatibility.
 
+### Embedded generation outputs
+
+[`build-sel4.py`](../../scripts/build/build-sel4.py) writes embedded generations beneath an
+`embedded/` child of the selected generation output directory.
+The default QEMU output is `build/sel4-generation/embedded/generation.bin`.
+Other platforms retain their platform directory, and custom output names retain their selected parent.
+The root build consumes the returned generation path.
+
+The wrapper preserves existing files in the parent, including a selector `boot-store.bin` from an earlier build.
+It never removes that store to make an embedded build succeed.
+[`build-generation.py`](../../scripts/build/build-generation.py) still refuses embedded output into a directory containing `boot-store.bin`.
+A supplied prebuilt generation bypasses output creation and remains unchanged.
+
 ### Delivery ELF metadata
 
 The generation builder validates each native ELF before making a stripped delivery
