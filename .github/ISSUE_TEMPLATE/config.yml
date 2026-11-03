@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Build and run Slime OS
+    url: https://github.com/iceice666/slime_os/blob/main/docs/getting-started/02-build-and-run.md
+    about: Find prerequisites, first-boot commands, and common build failures.
+  - name: Contribution guide
+    url: https://github.com/iceice666/slime_os/blob/main/CONTRIBUTING.md
+    about: Learn how bug reports and proposals become canonical work and pull requests.

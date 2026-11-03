@@ -34,6 +34,11 @@ file owns the exact rules; that page explains them.
 Open a [GitHub Issue](https://github.com/iceice666/slime_os/issues) for a bug,
 proposal, question, or discussion. For bugs, include the target, revision,
 reproduction steps, expected result, and observed output when available.
+The [issue chooser](https://github.com/iceice666/slime_os/issues/new/choose)
+offers a bug-report form and a feature-request form.
+The bug-report form guides reproduction details and keeps environment information and logs optional.
+The feature-request form asks for the problem and proposed behavior, with optional verification ideas.
+Use a blank issue for questions, discussions, or reports that do not fit either form.
 Ordinary reporters do **not** need to install MyQue or edit `.tasks`.
 Accepted work is later represented as a canonical MyQue item. The Issue does
 not track that item; the item's file under `.tasks/` is its only state.
