@@ -131,6 +131,11 @@ GENERATORS = (
         "entropy_authority.py",
         "entropy_authority.rs",
     ),
+    (
+        ROOT / "contracts" / "graph-arrival-ceiling" / "v1" / "schema.zt",
+        "graph_arrival_ceiling.py",
+        "graph_arrival_ceiling.rs",
+    ),
 )
 INVALID_SCHEMA = "INVALID_"
 HEADER = """# @generated from boot contract schemas; do not edit.

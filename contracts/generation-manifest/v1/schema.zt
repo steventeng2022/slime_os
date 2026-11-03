@@ -708,6 +708,11 @@ GenerationManifest :: type {
   -- component can reach any parameter — which is what every generation before
   -- C9.4 did, stated rather than inferred.
   lifecyclePolicy? : LifecyclePolicy;
+  -- Optional graph arrival ceiling, carried as the graph-arrival-ceiling/v1
+  -- resource object. Absent means a finite plane's root handles its default
+  -- of 131072 component arrivals, which is what every generation before it
+  -- did. A product generation has no ceiling and may not declare one.
+  graphArrivalCeiling? : Int;
   -- Optional C9.5 recording table. Absent and empty both mean no instance is
   -- declared deterministic and no recording stream exists, so nothing is
   -- recorded and nothing replays — the deny-by-default answer, and what every

@@ -430,7 +430,7 @@ test_sel4_root:
     # modules that exist there: P6's `framebuffer` and `boot_record` are gated
     # to x86-64 because the boot framebuffer is reached through an x86 extra-
     # BootInfo record, and their tests are covered by the x86-64 planes instead.
-    expected=363
+    expected=365
     # Use the toolchain pinned to the installed seL4 prefix, not the ambient one.
     toolchain="$(python3 -c "import pathlib,tomllib; print(tomllib.loads(pathlib.Path('sel4/pins.toml').read_text())['rust_sel4']['toolchain'])")"
     host="$(rustc -vV | sed -n 's/^host: //p')"

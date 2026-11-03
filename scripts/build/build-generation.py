@@ -126,6 +126,7 @@ from generation_resources import (
     build_block_ring_authority,
     build_clock_authority,
     build_entropy_authority,
+    build_graph_arrival_ceiling,
     build_zenoh_grants_table,
     build_instance_lifetime,
     instance_lifetime_identity,  # noqa: F401 -- read by check-system-spec.py through this module
@@ -3158,6 +3159,12 @@ def build_sel4_generation(
         for instance in manifest["instances"]
         if instance.get("lifetime", "bounded") == "resident"
     ]
+    if "graph-arrival-ceiling" in object_ids:
+        payloads["graph-arrival-ceiling"] = build_graph_arrival_ceiling(manifest)
+    elif manifest.get("graphArrivalCeiling") is not None:
+        # A ceiling nothing carries is one the root cannot read: the plane would
+        # stop at the default while the manifest claimed a larger run.
+        fail("graphArrivalCeiling declared without a graph-arrival-ceiling resource object")
     if "instance-lifetime" in object_ids:
         payloads["instance-lifetime"] = build_instance_lifetime(manifest)
     elif residents:

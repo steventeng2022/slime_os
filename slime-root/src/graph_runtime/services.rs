@@ -74,10 +74,16 @@ pub(super) fn serve_instance_graph(
     // Product is a resident graph, not a bounded verification workload. Its
     // idle components poll explicit non-blocking capabilities, so ordinary
     // healthy operation keeps producing root requests for the product's whole
-    // lifetime. Finite planes retain the request bound as a livelock watchdog.
+    // lifetime. Finite planes retain the request bound as a livelock watchdog;
+    // a generation may raise it through its authenticated arrival ceiling, and
+    // admission has refused one on a product generation.
+    let declared_ceiling = crate::generation::graph_arrival_ceiling(generation);
     let iteration_limit = (generation.boot_action
         != boot_contracts::generation::BootAction::Product)
-        .then_some(MAX_GRAPH_ITERATIONS);
+        .then(|| declared_ceiling.unwrap_or(MAX_GRAPH_ITERATIONS));
+    if let Some(ceiling) = declared_ceiling {
+        slime_root::diagnostic_println!("SLIME_GRAPH arrival-ceiling={}", ceiling);
+    }
     let required = (0..generation.instance_count())
         .filter(|index| {
             generation.instance(*index).is_ok_and(|instance| {

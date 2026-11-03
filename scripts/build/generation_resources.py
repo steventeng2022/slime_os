@@ -1029,6 +1029,34 @@ def build_wait_set(manifest: dict) -> bytes:
     return header + b"".join(WAIT_SET_ENTRY.pack(*entry) for entry in entries)
 
 
+def build_graph_arrival_ceiling(manifest: dict) -> bytes:
+    """Encode the graph-arrival-ceiling resource object (graph-arrival-ceiling/v1).
+
+    The object raises a finite plane's arrival ceiling and exists only when one
+    is declared, so an object without a value, a value that does not raise the
+    default, and a product generation carrying one are refused.
+    """
+    ceiling = manifest.get("graphArrivalCeiling")
+    if ceiling is None:
+        fail("graph-arrival-ceiling resource object declared without a graphArrivalCeiling")
+    if isinstance(ceiling, bool) or not isinstance(ceiling, int):
+        fail("graphArrivalCeiling is not an integer")
+    if not wire_contracts.GRAPH_ARRIVAL_CEILING_DEFAULT < ceiling <= wire_contracts.GRAPH_ARRIVAL_CEILING_MAX:
+        fail(
+            f"graphArrivalCeiling {ceiling} is outside "
+            f"{wire_contracts.GRAPH_ARRIVAL_CEILING_DEFAULT + 1}..{wire_contracts.GRAPH_ARRIVAL_CEILING_MAX}"
+        )
+    if manifest["bootAction"] == "product":
+        fail("graphArrivalCeiling: a product generation has no arrival ceiling")
+    return wire_contracts.GRAPH_ARRIVAL_CEILING_HEADER.pack(
+        wire_contracts.GRAPH_ARRIVAL_CEILING_MAGIC,
+        wire_contracts.GRAPH_ARRIVAL_CEILING_VERSION,
+        wire_contracts.GRAPH_ARRIVAL_CEILING_HEADER_BYTES,
+        0,
+        ceiling,
+    )
+
+
 def instance_lifetime_identity(name: str) -> bytes:
     """Stable per-instance identity, matching boot_contracts::instance_lifetime."""
     encoded = name.encode("utf-8")

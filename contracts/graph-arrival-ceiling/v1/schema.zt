@@ -1,0 +1,67 @@
+-- Slime OS graph arrival ceiling, version 1.
+--
+-- A generation resource object declaring how many component arrivals the
+-- root's graph service loop handles before a finite plane stops. Without the
+-- object a finite plane keeps the root's default of `defaultCeiling`
+-- arrivals; a product generation has no ceiling and may not carry one.
+-- Embedded as a KIND_RESOURCE object and authenticated by the generation's
+-- existing object digest table; it adds no field to the generation header, so
+-- a generation that declares no ceiling is byte-identical to one built before
+-- this contract existed.
+--
+-- A declared ceiling only raises the default. The ceiling is a livelock
+-- watchdog, so a declared value is still finite and bounded by `maxCeiling`.
+
+env ::= import stdlib.env;
+fs ::= import stdlib.fs;
+gen ::= import "gen_rust.zt";
+t ::= import stdlib.text;
+
+formatVersion :: Int = 1;
+headerBytes :: Int = 32;
+-- The root's ceiling when the object is absent. A declared ceiling is strictly
+-- above it.
+defaultCeiling :: Int = 131072;
+-- 2^30 arrivals. A plane that needs more is not a bounded verification run.
+maxCeiling :: Int = 1073741824;
+
+WireField :: type { name : Text; width : Int; signed : Bool; byteArray : Bool; };
+
+CeilingHeader :: type {
+  magic : Int;
+  format_version : Int;
+  header_size : Int;
+  required_flags : Int;
+  arrival_ceiling : Int;
+};
+
+headerSchema ::= schema CeilingHeader;
+
+headerLayout :: List WireField = {
+  { name = "magic"; width = 8; signed = false; byteArray = true; };
+  { name = "format_version"; width = 4; signed = false; byteArray = false; };
+  { name = "header_size"; width = 4; signed = false; byteArray = false; };
+  { name = "required_flags"; width = 8; signed = false; byteArray = false; };
+  { name = "arrival_ceiling"; width = 8; signed = false; byteArray = false; };
+};
+
+format ::= {
+  formatVersion =;
+  headerBytes =;
+  defaultCeiling =;
+  maxCeiling =;
+  headerFields = headerSchema.fields ?? {;};
+  headerLayout =;
+};
+
+main :: { write : FsWrite; env : Env; } -> Unit ! { * fs.WholeWriteEffects; * env.GetEffects; }
+  = caps => [
+    root := env.get caps.env "SLIME_BOOT_BINDINGS_ROOT" ?? ".";
+    bindings := gen.render format;
+    pythonPath := t.join "" { root; "/graph_arrival_ceiling.py"; };
+    rustPath := t.join "" { root; "/graph_arrival_ceiling.rs"; };
+    fs.writeAll caps.write pythonPath bindings.python;
+    fs.writeAll caps.write rustPath bindings.rust
+  ];
+
+main

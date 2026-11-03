@@ -48,6 +48,8 @@ from component_spec import CompiledSpec, admit_specs, interface_catalogue
 from harness import GENERATION_COMPOSITIONS, GENERATION_FIXTURES, ROOT, load_script
 from zutai_cli import STDLIB, ZutaiError, binary as zutai_binary, evaluate, prefetch
 from boot_contracts import (
+    GRAPH_ARRIVAL_CEILING_DEFAULT,
+    GRAPH_ARRIVAL_CEILING_MAX,
     PRIVATE_MEMORY_CAPACITY_PROFILES,
     PRIVATE_MEMORY_DEFAULT_REGION_PAGES,
     PRIVATE_MEMORY_DEFAULT_TOTAL_PAGES,
@@ -234,6 +236,7 @@ _SPEC_FIELDS = {
     "waitSetObject",
     "schedulingClass",
     "lifecyclePolicy",
+    "graphArrivalCeiling",
     "privateMemoryPolicy",
     "recording",
     "recordingObject",
@@ -286,9 +289,9 @@ def _load(path: Path, contract: ModuleType) -> dict:
         _fail(f"{path}: invalid Zutai JSON projection: {error}")
     if not isinstance(value, dict):
         _fail(f"{path}: expected a record")
-    # `fabricGraph`, `schedulingClass`, and `lifecyclePolicy` are optional
-    # records; their absence is a legitimate shape.
-    _OPTIONAL_FIELDS = {"fabricGraph", "schedulingClass", "lifecyclePolicy", "privateMemoryPolicy"}
+    # `fabricGraph`, `schedulingClass`, `lifecyclePolicy` and
+    # `graphArrivalCeiling` are optional; their absence is a legitimate shape.
+    _OPTIONAL_FIELDS = {"fabricGraph", "schedulingClass", "lifecyclePolicy", "graphArrivalCeiling", "privateMemoryPolicy"}
     # The IO11 interface table postdates every earlier spec; an absent field is
     # the same declaration as an empty one without an object.
     _DEFAULTED_FIELDS = {"networkInterfaces": [], "networkInterfacesObject": False,
@@ -710,6 +713,17 @@ def _validate_bounds(spec: dict, contract: ModuleType) -> None:
             _fail("lifecyclePolicy.dependencies: exceeds the declared bound")
         if len(lifecycle["parameters"]) > contract.MAX_LIFECYCLE_PARAMETER_GRANTS:
             _fail("lifecyclePolicy.parameters: exceeds the declared bound")
+
+    # A declared ceiling only raises a finite plane's default, stays finite, and
+    # has nothing to bound in a product generation, whose root serves without one.
+    ceiling = spec.get("graphArrivalCeiling")
+    if ceiling is not None:
+        if isinstance(ceiling, bool) or not isinstance(ceiling, int):
+            _fail("graphArrivalCeiling: not an integer")
+        if not GRAPH_ARRIVAL_CEILING_DEFAULT < ceiling <= GRAPH_ARRIVAL_CEILING_MAX:
+            _fail(f"graphArrivalCeiling: {ceiling} is outside {GRAPH_ARRIVAL_CEILING_DEFAULT + 1}..{GRAPH_ARRIVAL_CEILING_MAX}")
+        if spec["bootAction"] == "product":
+            _fail("graphArrivalCeiling: a product generation has no arrival ceiling")
 
     # Identifier-shaped fields against `maxNameBytes`, free text against
     # `maxTextBytes`. Both end up in the manifest, which the generation encoder
@@ -1277,6 +1291,8 @@ def derive_manifest(system: CompiledSystem) -> dict:
         objects.append({"id": "scheduling-class", "kind": "resource", "size": 4096})
     if spec.get("lifecyclePolicy") is not None:
         objects.append({"id": "lifecycle-policy", "kind": "resource", "size": 4096})
+    if spec.get("graphArrivalCeiling") is not None:
+        objects.append({"id": "graph-arrival-ceiling", "kind": "resource", "size": 4096})
 
     # Canonical order throughout. `build-generation.py` sorts `objects`,
     # `executables`, `instances`, `grants`, and `state` before encoding
@@ -1384,6 +1400,8 @@ def derive_manifest(system: CompiledSystem) -> dict:
     lifecycle = spec.get("lifecyclePolicy")
     if lifecycle is not None:
         manifest["lifecyclePolicy"] = lifecycle
+    if spec.get("graphArrivalCeiling") is not None:
+        manifest["graphArrivalCeiling"] = spec["graphArrivalCeiling"]
     if spec["recordingObject"]:
         manifest["recording"] = spec["recording"]
     return manifest

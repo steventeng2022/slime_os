@@ -152,6 +152,23 @@ A component reads its own lifetime through `LIFECYCLE LIFETIME READ`
 so a composition that shuts an instance down declares it bounded. The rationale
 is in [the decision record](../decisions/instance-lifetime.md).
 
+## Graph arrival ceiling
+
+The root's graph service loop counts component arrivals. In a finite plane it
+stops after 131072 of them, as a livelock watchdog. A product generation has no
+ceiling, because its resident graph keeps producing arrivals for its whole life.
+
+A finite plane that needs a longer run declares `graphArrivalCeiling` in its
+system spec. The builder carries it as the `contracts/graph-arrival-ceiling/v1`
+resource object, and only when it is declared:
+
+- A declared ceiling is above 131072 and at most 2^30 arrivals.
+- Admission refuses a malformed ceiling, a second ceiling, and a ceiling on a
+  product generation.
+- The root serves the declared count and prints `SLIME_GRAPH
+  arrival-ceiling=N` before it serves. A generation that declares no ceiling
+  prints nothing new and keeps 131072.
+
 ## Recording and determinism
 
 `contracts/recording-policy/v1/` binds declared record/replay participants to one

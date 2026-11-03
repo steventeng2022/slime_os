@@ -651,6 +651,11 @@ SystemSpec :: type {
   waitSetObject : Bool;
   schedulingClass? : SystemSchedulingClassPolicy;
   lifecyclePolicy? : SystemLifecyclePolicy;
+  -- Optional graph arrival ceiling: the component arrivals a finite plane's
+  -- root handles before it stops, carried as the graph-arrival-ceiling/v1
+  -- resource object. Absent keeps the root's default. A product generation
+  -- has no ceiling and may not declare one.
+  graphArrivalCeiling? : Int;
   recording : List SystemRecordingEntry;
   recordingObject : Bool;
   deploymentConstraint : Text;

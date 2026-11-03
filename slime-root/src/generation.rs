@@ -11,9 +11,10 @@ use boot_contracts::component_image::{self, ComponentTargetError};
 use boot_contracts::entropy_authority::{self, EntropyAuthority};
 use boot_contracts::fabric_graph::{self, FabricGraph, MAX_INTERPOSITION_HOPS};
 use boot_contracts::generation::{
-    DecodeError, Generation, Instance, InstanceBinding, KIND_BOOTSTRAP, KIND_COMPONENT,
+    BootAction, DecodeError, Generation, Instance, InstanceBinding, KIND_BOOTSTRAP, KIND_COMPONENT,
     KIND_RESOURCE, RIGHT_TRANSFER, ResourceQuota, Rights,
 };
+use boot_contracts::graph_arrival_ceiling::{self, GraphArrivalCeiling};
 use boot_contracts::instance_lifetime::{self, InstanceLifetime, Lifetime};
 use boot_contracts::io_resource::{self, IoResourceBudget};
 use boot_contracts::lifecycle_policy::{self, LifecyclePolicy};
@@ -155,6 +156,10 @@ pub enum GenerationError {
     /// The generation carries an instance-lifetime resource that is malformed
     /// or names an instance this generation does not declare.
     UnsatisfiableInstanceLifetime,
+    /// The generation carries a graph-arrival-ceiling resource that is
+    /// malformed, appears twice, or rides on a product generation, whose graph
+    /// has no arrival ceiling to raise.
+    UnsatisfiableGraphArrivalCeiling,
 }
 
 impl From<DecodeError> for GenerationError {
@@ -1232,6 +1237,52 @@ pub fn instance_lifetime_object<'a>(
     None
 }
 
+/// The arrival ceiling the resource objects declare, judged with the boot
+/// action they ride on: `None` when no object carries one, otherwise the one
+/// decoded ceiling. More than one object, an object that does not decode, and
+/// any ceiling on a product generation are refused: a product graph has no
+/// ceiling, so carrying one there would claim a bound the root never applies.
+fn declared_arrival_ceiling<'a>(
+    boot_action: BootAction,
+    resources: impl IntoIterator<Item = &'a [u8]>,
+) -> Result<Option<usize>, GenerationError> {
+    let mut declared = None;
+    for bytes in resources {
+        if !bytes.starts_with(&graph_arrival_ceiling::MAGIC) {
+            continue;
+        }
+        let ceiling = GraphArrivalCeiling::decode(bytes)
+            .map_err(|_| GenerationError::UnsatisfiableGraphArrivalCeiling)?;
+        if declared.replace(ceiling.arrivals()).is_some() {
+            return Err(GenerationError::UnsatisfiableGraphArrivalCeiling);
+        }
+    }
+    if declared.is_some() && boot_action == BootAction::Product {
+        return Err(GenerationError::UnsatisfiableGraphArrivalCeiling);
+    }
+    Ok(declared)
+}
+
+/// The ceiling verdict over this generation's resource objects. An object the
+/// table cannot yield is left to the admission loop that refuses it.
+fn graph_arrival_ceiling_verdict(
+    generation: &Generation<'_>,
+) -> Result<Option<usize>, GenerationError> {
+    let resources = (0..generation.object_count())
+        .filter_map(|index| generation.object(index).ok())
+        .filter(|object| object.kind == KIND_RESOURCE)
+        .map(|object| object.bytes);
+    declared_arrival_ceiling(generation.boot_action, resources)
+}
+
+/// The component arrivals a finite plane's graph service handles when the
+/// generation declares a ceiling, or `None` when it keeps the root's default.
+/// Admission has already refused a malformed or misplaced ceiling, so a
+/// refusal here reads as no declaration rather than a second verdict.
+pub fn graph_arrival_ceiling(generation: &Generation<'_>) -> Option<usize> {
+    graph_arrival_ceiling_verdict(generation).ok().flatten()
+}
+
 /// Every resident row names an instance this generation declares, so a
 /// resident declaration can never silently fail to apply.
 fn instance_lifetime_admission(generation: &Generation<'_>) -> Result<(), GenerationError> {
@@ -2015,6 +2066,7 @@ impl Admission {
         // stream pairing and capacity ceiling are the decoder's.
         let recording_entries = recording_policy_admission(generation)?;
         instance_lifetime_admission(generation)?;
+        graph_arrival_ceiling_verdict(generation)?;
         let mut bootstrap_objects = 0;
         let mut component_objects = 0;
         for index in 0..generation.object_count() {
@@ -2346,6 +2398,61 @@ mod tests {
     use boot_contracts::generation::{RIGHT_TRANSFER, ResourceQuota};
 
     use super::admit_resource_quota;
+
+    fn ceiling_object(arrivals: u64) -> alloc::vec::Vec<u8> {
+        use boot_contracts::graph_arrival_ceiling as ceiling;
+        let mut bytes = alloc::vec::Vec::new();
+        bytes.extend_from_slice(&ceiling::MAGIC);
+        bytes.extend_from_slice(&ceiling::FORMAT_VERSION.to_le_bytes());
+        bytes.extend_from_slice(&(ceiling::HEADER_BYTES as u32).to_le_bytes());
+        bytes.extend_from_slice(&0u64.to_le_bytes());
+        bytes.extend_from_slice(&arrivals.to_le_bytes());
+        bytes
+    }
+
+    /// A finite plane takes the ceiling it declares, and keeps the default
+    /// when it declares none; other resources are not read as a ceiling.
+    #[test]
+    fn a_finite_plane_takes_its_one_declared_arrival_ceiling() {
+        use boot_contracts::generation::BootAction;
+        let declared = ceiling_object(4_194_304);
+        let other = *b"SLIMELT\0";
+        assert_eq!(
+            super::declared_arrival_ceiling(BootAction::DataVolume, [&declared[..], &other[..]]),
+            Ok(Some(4_194_304))
+        );
+        assert_eq!(
+            super::declared_arrival_ceiling(BootAction::DataVolume, [&other[..]]),
+            Ok(None)
+        );
+        assert_eq!(
+            super::declared_arrival_ceiling(BootAction::Product, []),
+            Ok(None)
+        );
+    }
+
+    /// A ceiling on a product graph, a second ceiling, and one that does not
+    /// decode are each refused at admission.
+    #[test]
+    fn a_misplaced_duplicate_or_malformed_arrival_ceiling_is_refused() {
+        use boot_contracts::generation::BootAction;
+        let declared = ceiling_object(4_194_304);
+        let default = ceiling_object(131_072);
+        for (action, resources) in [
+            (BootAction::Product, alloc::vec![&declared[..]]),
+            (
+                BootAction::DataVolume,
+                alloc::vec![&declared[..], &declared[..]],
+            ),
+            (BootAction::DataVolume, alloc::vec![&default[..]]),
+            (BootAction::DataVolume, alloc::vec![&declared[..31]]),
+        ] {
+            assert_eq!(
+                super::declared_arrival_ceiling(action, resources),
+                Err(GenerationError::UnsatisfiableGraphArrivalCeiling)
+            );
+        }
+    }
 
     /// One declared grant, for the crossing-grant rule below.
     fn declared_grant(

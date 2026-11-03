@@ -21,6 +21,7 @@ pub mod fabric_graph;
 pub mod generation;
 #[cfg(feature = "gpt")]
 pub mod gpt;
+pub mod graph_arrival_ceiling;
 pub mod instance_lifetime;
 pub mod io_resource;
 pub mod kernel_image;
