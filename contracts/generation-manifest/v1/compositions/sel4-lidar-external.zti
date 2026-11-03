@@ -1,0 +1,825 @@
+{
+  bootAction = "wait-set";
+  bootstrapInstance = "init";
+  executables = [
+    {
+      commandProfile = [];
+      name = "init";
+      object = "sha256:init";
+      role = "init";
+      spawnBudget = 0;
+    };
+    {
+      commandProfile = [];
+      name = "lidar-publisher";
+      object = "sha256:lidar-publisher";
+      role = "application";
+      spawnBudget = 0;
+      stackBytes = 65536;
+    };
+    {
+      commandProfile = [];
+      name = "network-service";
+      object = "sha256:network-service";
+      role = "service";
+      spawnBudget = 0;
+      stackBytes = 131072;
+    };
+    {
+      commandProfile = [];
+      name = "virtio-blk-driver";
+      object = "sha256:virtio-blk-driver";
+      role = "service";
+      spawnBudget = 0;
+    };
+    {
+      commandProfile = [];
+      name = "virtio-net-driver";
+      object = "sha256:virtio-net-driver";
+      role = "service";
+      spawnBudget = 0;
+    };
+  ];
+  formatVersion = 1;
+  generation = 172;
+  grants = [
+    {
+      name = "lidar-block-device";
+      capabilityKind = "device";
+      rights = [
+        "mapMmio";
+      ];
+      source = "virtio-blk-driver";
+      target = "virtio-blk-driver";
+      transferable = false;
+    };
+    {
+      name = "lidar-block-dma";
+      capabilityKind = "dmaAccount";
+      rights = [
+        "dmaPin";
+        "dmaRelease";
+      ];
+      source = "virtio-blk-driver";
+      target = "virtio-blk-driver";
+      transferable = false;
+    };
+    {
+      name = "lidar-block-interrupt";
+      capabilityKind = "interruptSource";
+      rights = [
+        "irqAck";
+      ];
+      source = "virtio-blk-driver";
+      target = "virtio-blk-driver";
+      transferable = false;
+    };
+    {
+      name = "lidar-block-mmio";
+      capabilityKind = "mmioRegion";
+      rights = [
+        "mapMmio";
+      ];
+      source = "virtio-blk-driver";
+      target = "virtio-blk-driver";
+      transferable = false;
+    };
+    {
+      name = "lidar-block-peer";
+      capabilityKind = "endpoint";
+      rights = [
+        "send";
+        "recv";
+      ];
+      source = "lidar-publisher";
+      target = "virtio-blk-driver";
+      transferable = true;
+    };
+    {
+      name = "lidar-publisher-buffer-factory";
+      capabilityKind = "sharedBufferFactory";
+      rights = [
+        "bufferCreate";
+      ];
+      source = "init";
+      target = "lidar-publisher";
+      transferable = false;
+    };
+    {
+      name = "lidar-publisher-control";
+      capabilityKind = "endpoint";
+      rights = [
+        "send";
+        "recv";
+      ];
+      source = "lidar-publisher";
+      target = "network-service";
+      transferable = false;
+    };
+    {
+      name = "lidar-publisher-provision";
+      capabilityKind = "endpoint";
+      rights = [
+        "send";
+        "recv";
+      ];
+      source = "network-service";
+      target = "lidar-publisher";
+      transferable = true;
+    };
+    {
+      name = "network-service-buffer-factory";
+      capabilityKind = "sharedBufferFactory";
+      rights = [
+        "bufferCreate";
+      ];
+      source = "init";
+      target = "network-service";
+      transferable = false;
+    };
+    {
+      name = "network-service-link-peer";
+      capabilityKind = "endpoint";
+      rights = [
+        "send";
+        "recv";
+      ];
+      source = "network-service";
+      target = "virtio-net-driver";
+      transferable = true;
+    };
+    {
+      name = "virtio-net-device";
+      capabilityKind = "device";
+      rights = [
+        "mapMmio";
+      ];
+      source = "virtio-net-driver";
+      target = "virtio-net-driver";
+      transferable = false;
+    };
+    {
+      name = "virtio-net-dma";
+      capabilityKind = "dmaAccount";
+      rights = [
+        "dmaPin";
+        "dmaRelease";
+      ];
+      source = "virtio-net-driver";
+      target = "virtio-net-driver";
+      transferable = false;
+    };
+    {
+      name = "virtio-net-interrupt";
+      capabilityKind = "interruptSource";
+      rights = [
+        "irqAck";
+      ];
+      source = "virtio-net-driver";
+      target = "virtio-net-driver";
+      transferable = false;
+    };
+    {
+      name = "virtio-net-mmio";
+      capabilityKind = "mmioRegion";
+      rights = [
+        "mapMmio";
+      ];
+      source = "virtio-net-driver";
+      target = "virtio-net-driver";
+      transferable = false;
+    };
+  ];
+  health = {
+    bootAttempts = 3;
+    requiredInstances = [
+      "init";
+      "lidar-publisher";
+      "network-service";
+      "virtio-blk-driver";
+      "virtio-net-driver";
+    ];
+  };
+  instances = [
+    {
+      autostart = true;
+      bindings = [];
+      dependencies = [];
+      executable = "init";
+      health = "required";
+      lifetime = "bounded";
+      name = "init";
+      owner = "root";
+    };
+    {
+      autostart = true;
+      bindings = [
+        {
+          grant = "lidar-block-peer";
+        };
+        {
+          grant = "lidar-publisher-buffer-factory";
+        };
+        {
+          grant = "lidar-publisher-control";
+        };
+        {
+          grant = "lidar-publisher-provision";
+        };
+      ];
+      dependencies = [];
+      executable = "lidar-publisher";
+      health = "required";
+      lifetime = "bounded";
+      name = "lidar-publisher";
+      owner = "root";
+    };
+    {
+      autostart = true;
+      bindings = [
+        {
+          grant = "lidar-publisher-control";
+          slot = 2;
+          slotReason = "componentAbi";
+        };
+        {
+          grant = "lidar-publisher-provision";
+          slot = 29;
+          slotReason = "encodedLayout";
+        };
+        {
+          grant = "network-service-buffer-factory";
+          slot = 1;
+          slotReason = "componentAbi";
+        };
+        {
+          grant = "network-service-link-peer";
+          slot = 0;
+          slotReason = "componentAbi";
+        };
+      ];
+      dependencies = [
+        "virtio-net-driver";
+      ];
+      executable = "network-service";
+      health = "required";
+      lifetime = "bounded";
+      name = "network-service";
+      owner = "root";
+    };
+    {
+      autostart = true;
+      bindings = [
+        {
+          grant = "lidar-block-device";
+          slot = 1;
+          slotReason = "componentAbi";
+        };
+        {
+          grant = "lidar-block-dma";
+          slot = 4;
+          slotReason = "componentAbi";
+        };
+        {
+          grant = "lidar-block-interrupt";
+          slot = 3;
+          slotReason = "componentAbi";
+        };
+        {
+          grant = "lidar-block-mmio";
+          slot = 2;
+          slotReason = "componentAbi";
+        };
+        {
+          grant = "lidar-block-peer";
+          slot = 0;
+          slotReason = "componentAbi";
+        };
+      ];
+      dependencies = [];
+      executable = "virtio-blk-driver";
+      health = "required";
+      lifetime = "bounded";
+      name = "virtio-blk-driver";
+      owner = "root";
+    };
+    {
+      autostart = true;
+      bindings = [
+        {
+          grant = "network-service-link-peer";
+          slot = 0;
+          slotReason = "componentAbi";
+        };
+        {
+          grant = "virtio-net-device";
+          slot = 1;
+          slotReason = "componentAbi";
+        };
+        {
+          grant = "virtio-net-dma";
+          slot = 4;
+          slotReason = "componentAbi";
+        };
+        {
+          grant = "virtio-net-interrupt";
+          slot = 3;
+          slotReason = "componentAbi";
+        };
+        {
+          grant = "virtio-net-mmio";
+          slot = 2;
+          slotReason = "componentAbi";
+        };
+      ];
+      dependencies = [];
+      executable = "virtio-net-driver";
+      health = "required";
+      lifetime = "bounded";
+      name = "virtio-net-driver";
+      owner = "root";
+    };
+  ];
+  mintedBindings = [];
+  interfaceSchemas = [];
+  objects = [
+    {
+      id = "block-ring-authority";
+      kind = "resource";
+      size = 4096;
+    };
+    {
+      id = "boot-layout";
+      kind = "resource";
+      size = 4096;
+    };
+    {
+      id = "clock-authority";
+      kind = "resource";
+      size = 4096;
+    };
+    {
+      id = "graph-arrival-ceiling";
+      kind = "resource";
+      size = 4096;
+    };
+    {
+      id = "io-resource-budget";
+      kind = "resource";
+      size = 4096;
+    };
+    {
+      id = "lifecycle-policy";
+      kind = "resource";
+      size = 4096;
+    };
+    {
+      id = "network-application";
+      kind = "resource";
+      size = 4096;
+    };
+    {
+      id = "network-destinations";
+      kind = "resource";
+      size = 4096;
+    };
+    {
+      id = "network-interface";
+      kind = "resource";
+      size = 4096;
+    };
+    {
+      id = "private-memory-budget";
+      kind = "resource";
+      size = 4096;
+    };
+    {
+      id = "sha256:init";
+      kind = "bootstrap";
+      size = 65536;
+    };
+    {
+      id = "sha256:lidar-publisher";
+      kind = "component";
+      size = 65536;
+    };
+    {
+      id = "sha256:network-service";
+      kind = "component";
+      size = 262144;
+    };
+    {
+      id = "sha256:virtio-blk-driver";
+      kind = "component";
+      size = 65536;
+    };
+    {
+      id = "sha256:virtio-net-driver";
+      kind = "component";
+      size = 65536;
+    };
+    {
+      id = "shared-buffer-budget";
+      kind = "resource";
+      size = 4096;
+    };
+    {
+      id = "wait-set";
+      kind = "resource";
+      size = 4096;
+    };
+  ];
+  privateMemoryBudget = [
+    {
+      holder = "lidar-publisher";
+      pageQuota = 1536;
+    };
+  ];
+  sharedBufferBudget = [
+    {
+      bufferCount = 2;
+      bytePages = 10;
+      holder = "lidar-publisher";
+      loanCount = 4;
+      mappingCount = 4;
+    };
+    {
+      bufferCount = 12;
+      bytePages = 12;
+      holder = "network-service";
+      loanCount = 12;
+      mappingCount = 12;
+    };
+    {
+      bufferCount = 0;
+      bytePages = 0;
+      holder = "virtio-blk-driver";
+      loanCount = 2;
+      mappingCount = 2;
+    };
+    {
+      bufferCount = 0;
+      bytePages = 0;
+      holder = "virtio-net-driver";
+      loanCount = 10;
+      mappingCount = 10;
+    };
+  ];
+  state = [];
+  target = "aarch64-sel4-qemu-virt";
+  notificationGrants = [
+    {
+      name = "io-link-tx-request-ready";
+      source = "network-service";
+      target = "virtio-net-driver";
+    };
+    {
+      name = "io-link-rx-request-ready";
+      source = "network-service";
+      target = "virtio-net-driver";
+    };
+    {
+      name = "io-link-tx-completion-ready";
+      source = "virtio-net-driver";
+      target = "network-service";
+    };
+    {
+      name = "io-link-rx-completion-ready";
+      source = "virtio-net-driver";
+      target = "network-service";
+    };
+    {
+      name = "io-link-state-changed";
+      source = "virtio-net-driver";
+      target = "network-service";
+    };
+    {
+      name = "lidar-network-request";
+      source = "lidar-publisher";
+      target = "network-service";
+    };
+    {
+      name = "lidar-publisher-done";
+      source = "network-service";
+      target = "lidar-publisher";
+    };
+    {
+      name = "lidar-block-request-ready";
+      source = "lidar-publisher";
+      target = "virtio-blk-driver";
+    };
+    {
+      name = "lidar-block-completion-ready";
+      source = "virtio-blk-driver";
+      target = "lidar-publisher";
+    };
+    {
+      name = "lidar-block-state-changed";
+      source = "virtio-blk-driver";
+      target = "lidar-publisher";
+    };
+  ];
+  notificationBindings = [
+    {
+      grant = "io-link-tx-request-ready";
+      holder = "network-service";
+      role = "signal";
+      slot = 0;
+    };
+    {
+      grant = "io-link-tx-request-ready";
+      holder = "virtio-net-driver";
+      role = "wait";
+      slot = 0;
+    };
+    {
+      grant = "io-link-rx-request-ready";
+      holder = "network-service";
+      role = "signal";
+      slot = 1;
+    };
+    {
+      grant = "io-link-rx-request-ready";
+      holder = "virtio-net-driver";
+      role = "wait";
+      slot = 1;
+    };
+    {
+      grant = "io-link-tx-completion-ready";
+      holder = "virtio-net-driver";
+      role = "signal";
+      slot = 2;
+    };
+    {
+      grant = "io-link-tx-completion-ready";
+      holder = "network-service";
+      role = "wait";
+      slot = 2;
+    };
+    {
+      grant = "io-link-rx-completion-ready";
+      holder = "virtio-net-driver";
+      role = "signal";
+      slot = 3;
+    };
+    {
+      grant = "io-link-rx-completion-ready";
+      holder = "network-service";
+      role = "wait";
+      slot = 3;
+    };
+    {
+      grant = "io-link-state-changed";
+      holder = "virtio-net-driver";
+      role = "signal";
+      slot = 4;
+    };
+    {
+      grant = "io-link-state-changed";
+      holder = "network-service";
+      role = "wait";
+      slot = 4;
+    };
+    {
+      grant = "lidar-network-request";
+      holder = "virtio-net-driver";
+      role = "signal";
+      slot = 5;
+    };
+    {
+      grant = "lidar-network-request";
+      holder = "lidar-publisher";
+      role = "signal";
+      slot = 0;
+    };
+    {
+      grant = "lidar-network-request";
+      holder = "network-service";
+      role = "wait";
+      slot = 5;
+    };
+    {
+      grant = "lidar-publisher-done";
+      holder = "network-service";
+      role = "signal";
+      slot = 6;
+    };
+    {
+      grant = "lidar-publisher-done";
+      holder = "lidar-publisher";
+      role = "wait";
+      slot = 1;
+    };
+    {
+      grant = "lidar-block-request-ready";
+      holder = "lidar-publisher";
+      role = "signal";
+      slot = 2;
+    };
+    {
+      grant = "lidar-block-request-ready";
+      holder = "virtio-blk-driver";
+      role = "wait";
+      slot = 0;
+    };
+    {
+      grant = "lidar-block-completion-ready";
+      holder = "virtio-blk-driver";
+      role = "signal";
+      slot = 1;
+    };
+    {
+      grant = "lidar-block-completion-ready";
+      holder = "lidar-publisher";
+      role = "wait";
+      slot = 3;
+    };
+    {
+      grant = "lidar-block-state-changed";
+      holder = "virtio-blk-driver";
+      role = "signal";
+      slot = 2;
+    };
+    {
+      grant = "lidar-block-state-changed";
+      holder = "lidar-publisher";
+      role = "wait";
+      slot = 4;
+    };
+  ];
+  clockAuthority = [
+    {
+      holder = "network-service";
+      simulatedAdvance = false;
+      simulatedRead = false;
+      timerBadgeBit = 1;
+      timerNotification = "lidar-network-request";
+      timerQuota = 1;
+      timerUse = true;
+    };
+    {
+      holder = "lidar-publisher";
+      simulatedAdvance = false;
+      simulatedRead = false;
+      timerBadgeBit = 3;
+      timerNotification = "lidar-publisher-done";
+      timerQuota = 1;
+      timerUse = true;
+    };
+  ];
+  ioResourceBudget = [
+    {
+      bufferLoans = 16;
+      device = 0;
+      dmaMappings = 18;
+      dmaPages = 20;
+      holder = "virtio-net-driver";
+      irqSources = 1;
+      mmioBytes = 4096;
+      mmioMappings = 1;
+      outstandingRequests = 16;
+    };
+    {
+      bufferLoans = 4;
+      device = 1;
+      dmaMappings = 3;
+      dmaPages = 12;
+      holder = "virtio-blk-driver";
+      irqSources = 1;
+      mmioBytes = 4096;
+      mmioMappings = 1;
+      outstandingRequests = 8;
+    };
+  ];
+  networkDestinations = [
+    {
+      address = "10.0.2.2";
+      addressKind = "ipv4";
+      byteBudget = 4096;
+      dnsRecordLimit = 0;
+      holder = "lidar-publisher";
+      listenerLimit = 0;
+      port = 17447;
+      queueDepth = 4;
+      reconnectLimit = 0;
+      retryLimit = 2;
+      rights = [
+        "connect";
+        "send";
+        "recv";
+      ];
+      socketLimit = 1;
+      timerBudget = 1;
+      transport = "tcp";
+    };
+  ];
+  networkInterfaces = [
+    {
+      address = "10.0.2.15";
+      gateway = "10.0.2.2";
+      holder = "network-service";
+      mac = "52:54:00:53:4c:01";
+      prefixLen = 24;
+    };
+  ];
+  networkApplications = [
+    {
+      acceptedSocketLimit = 0;
+      admittedPeer = "";
+      admittedPeerAddress = "";
+      backend = "external";
+      backlog = 0;
+      byteBudget = 0;
+      completionNotification = "lidar-publisher-done";
+      controlBinding = "lidar-publisher-control";
+      holder = "lidar-publisher";
+      hopLimit = 64;
+      idleTimeoutMs = 10000;
+      keepaliveMs = 0;
+      localAddress = "0.0.0.0";
+      localPort = 0;
+      nagle = true;
+      provisionBinding = "lidar-publisher-provision";
+      queueDepth = 0;
+      reconnectLimit = 0;
+      requestNotification = "lidar-network-request";
+      retryLimit = 0;
+      rights = [];
+      role = "client";
+      rxBufferBytes = 2048;
+      supervisionBinding = "";
+      timerBudget = 0;
+      txBufferBytes = 2048;
+    };
+  ];
+  blockRingAuthority = [
+    {
+      device = 1;
+      holder = "lidar-publisher";
+      rights = [
+        "blockRead";
+      ];
+      ring = 0;
+      sectorLimit = 264226;
+    };
+  ];
+  waitSet = [
+    {
+      badgeBit = 0;
+      drainSlot = 2;
+      kind = "stream";
+      notification = "lidar-network-request";
+      waiter = "network-service";
+    };
+    {
+      badgeBit = 1;
+      kind = "timer";
+      notification = "lidar-network-request";
+      waiter = "network-service";
+    };
+    {
+      badgeBit = 5;
+      kind = "device";
+      notification = "lidar-network-request";
+      waiter = "network-service";
+    };
+    {
+      badgeBit = 6;
+      drainSlot = 2;
+      kind = "stream";
+      notification = "lidar-publisher-done";
+      waiter = "lidar-publisher";
+    };
+    {
+      badgeBit = 3;
+      kind = "timer";
+      notification = "lidar-publisher-done";
+      waiter = "lidar-publisher";
+    };
+  ];
+  lifecyclePolicy = {
+    dependencies = [];
+    initialState = "Initialize";
+    parameters = [
+      {
+        holder = "network-service";
+        read = true;
+        subject = "network-service";
+        write = true;
+      };
+    ];
+    restarts = [];
+    terminalState = "Error";
+    transitions = [
+      {
+        from = "Initialize";
+        to = "Running";
+      };
+      {
+        from = "Running";
+        to = "Error";
+      };
+    ];
+  };
+  graphArrivalCeiling = 4194304;
+}
