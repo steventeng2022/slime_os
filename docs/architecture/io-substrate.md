@@ -112,12 +112,17 @@ store; its GUIDs derive from the payload's SHA-256.
 contract's order: GPT, partition, volume header, length, padding and payload hash.
 It then validates the payload with `frame_store::validate_streaming`, which applies
 `FrameStore::parse`'s checks in the same order to a store read where it lies. The
-reader holds one sector and one 4 KiB chunk, never the payload. `data-volume-probe`
+reader holds one sector and one 4 KiB chunk, never the payload. `data_volume::open_store`
+validates the same way and keeps the store open: `StoreReader::frame` reads a frame's
+index entry again under the checks it passed, and `StoreReader::read` copies a range
+of that frame's payload into storage the caller owns. `data-volume-probe`
 in `sel4-data-volume` runs it over a ring with read rights only and links no
 allocator.
 
-A finite plane's root stops serving after 131072 requests. One 4 KiB read costs
-about six, so one boot of such a plane reads at most about 80 MiB.
+A finite plane's root stops serving after 131072 requests unless the generation
+declares a larger [graph arrival ceiling](runtime-authority.md#graph-arrival-ceiling).
+One 4 KiB read costs about six, so one boot at the default reads at most about
+80 MiB.
 
 A dynamically spawned client receives exactly its generation-declared crossing
 grant vector, supplied by init to `drive_probe_plane_with_token`.

@@ -1,0 +1,63 @@
+{
+  formatVersion = 1;
+  name = "lidar-publisher";
+  componentType = "application";
+  version = "1.0.0";
+  owner = "root";
+  purpose = "The sel4-lidar-external publisher: reads LiDAR frames from a read-only data volume and publishes each as one Zenoh Put to the stock peer at 10.0.2.2:17447.";
+  implementation = {
+    provider = "workspace";
+    binary = "lidar-publisher";
+    contentHash = "";
+  };
+  provides = [];
+  requires = [
+    "endpoint";
+    "sharedBufferFactory";
+  ];
+  interfaces = [];
+  dependencies = [
+    "network-service";
+  ];
+  communication = {
+    semantic = "none";
+    qos = [];
+  };
+  configuration = [];
+  lifecycle = [
+    "Initialize";
+    "Start";
+    "Running";
+    "Error";
+  ];
+  runtime = {
+    executionEnvironment = "aarch64-sel4-qemu-virt";
+    resource = {
+      stackBytes = 65536;
+      spawnBudget = 0;
+      extraThreads = 0;
+      bufferBytePages = 0;
+      bufferCount = 0;
+      mappingCount = 0;
+      loanCount = 0;
+      privatePageQuota = 1536;
+    };
+    devices = [];
+  };
+  health = "required";
+  lifetime = "bounded";
+  compatibility = {
+    platform = "aarch64-sel4-qemu-virt";
+    interface = "contracts/interface-schema/v1";
+    dependency = "exact";
+    resource = "atMost";
+    runtime = "exact";
+    qos = "none";
+  };
+  test = {
+    testCondition = "the lidar_publish_check gate boots sel4-lidar-external with the frame store of the pinned bag on a read-only disk, against a stock eclipse-zenoh 1.0.0 peer on the host";
+    expectedResult = "every frame reaches the peer byte for byte, in order and no sooner than the period after the one before; the publisher reports the store, a summary equal to it and the closed session";
+    passFailCriteria = "lidar publish check: the guest read every frame from the read-only disk";
+    requiredTestEnvironment = "lidar_publish_check";
+  };
+}

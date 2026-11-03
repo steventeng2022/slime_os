@@ -2,9 +2,9 @@
 --
 -- `scripts/lib/zenoh_listener_peer.py` runs the pinned `eclipse-zenoh==1.0.0` Python binding in a
 -- separate process, subscribes to one key, and writes one record of this shape when it is done.
--- `scripts/check/check-sel4-io-network-plane.py --arm lidar-publish` reads it back and holds it
--- against the frame store and the packet capture. It crosses a process boundary, so it is a
--- versioned contract here and not a text format either side parses by hand.
+-- `scripts/check/check-lidar-publish.py` reads it back and holds it against the frame store and
+-- the packet capture. It crosses a process boundary, so it is a versioned contract here and not a
+-- text format either side parses by hand.
 --
 -- `contracts/zenoh-external-receipt/v1` carries each payload whole as hexadecimal, which bounds it
 -- to the demo's 12-byte samples. This record carries a payload as its length and its SHA-256, so a

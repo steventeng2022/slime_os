@@ -628,6 +628,11 @@ opt-level = "s"
 codegen-units = 1
 debug = false
 
+[profile.release.package.slime-component-lidar-publisher]
+opt-level = "s"
+codegen-units = 1
+debug = false
+
 [profile.release.package.slime-component-io-local-network-probe]
 opt-level = "s"
 codegen-units = 1

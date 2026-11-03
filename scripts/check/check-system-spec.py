@@ -231,6 +231,7 @@ def _decode(path: Path, label: str) -> dict:
 # hand-authored manifest. Their contracts and derived-byte drift remain checked.
 SPEC_NATIVE_SYSTEMS = frozenset({
     "sel4-data-volume",
+    "sel4-lidar-external",
     "sel4-entropy",
     "sel4-http",
     "sel4-http-public",

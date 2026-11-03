@@ -157,6 +157,7 @@ DERIVED_GENERATION_FIXTURES = {
     "sel4-storage": "sel4-storage.zti",
     "sel4-store": "sel4-store.zti",
     "sel4-data-volume": "sel4-data-volume.zti",
+    "sel4-lidar-external": "sel4-lidar-external.zti",
     "sel4-stream": "sel4-stream.zti",
     "sel4-c-runtime": "sel4-c-runtime.zti",
     "sel4-matrix": "sel4-matrix.zti",

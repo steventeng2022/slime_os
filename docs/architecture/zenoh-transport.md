@@ -78,6 +78,10 @@ declares: storage larger or smaller than that is refused at construction as
 What a link sends is bounded by the smaller of its own batch and the one the peer
 announced in its `INIT`. Nothing in these modules allocates.
 
+`limits::LIDAR` is the heap configuration `lidar-publisher` uses. Its batch is 4096
+bytes including the stream length, one network-service data operation. It admits a
+payload of 512 KiB, so a 494,889-byte PointCloud2 frame crosses as 121 fragments.
+
 ## Layers
 
 | Layer | What it owns | What it does not own |

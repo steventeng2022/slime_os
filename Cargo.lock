@@ -1263,6 +1263,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "slime-component-lidar-publisher"
+version = "0.1.0"
+dependencies = [
+ "slime-build-support",
+ "slime-components",
+ "slime-proto",
+ "slime-rt",
+]
+
+[[package]]
 name = "slime-component-lifecycle-restart-probe"
 version = "0.1.0"
 dependencies = [
